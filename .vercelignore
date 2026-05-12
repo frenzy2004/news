@@ -1,0 +1,9 @@
+.env
+.env.*
+!.env.example
+.next
+node_modules
+reports
+coverage
+.nyc_output
+npm-debug.log*

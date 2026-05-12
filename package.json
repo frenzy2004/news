@@ -1,0 +1,27 @@
+{
+  "name": "btw-business-relevance",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Generate JSON reports of BTW stories relevant to business profiles.",
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "generate": "node src/cli.js",
+    "test": "node --test test/*.test.js",
+    "smoke:live": "node src/cli.js --out reports/live-business-relevance.json"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "dependencies": {
+    "lucide-react": "^1.14.0",
+    "next": "^16.2.4",
+    "react": "^19.2.5",
+    "react-dom": "^19.2.5"
+  },
+  "overrides": {
+    "postcss": "8.5.10"
+  }
+}

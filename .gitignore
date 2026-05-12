@@ -1,0 +1,10 @@
+.env
+.vercel/
+node_modules/
+.next/
+reports/
+coverage/
+.nyc_output/
+npm-debug.log*
+
+.vercel
