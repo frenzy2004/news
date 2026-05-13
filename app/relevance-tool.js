@@ -575,7 +575,7 @@ function ChatMessage({ message }) {
 }
 
 function ChatAnswer({ citations, text }) {
-  const blocks = buildChatBlocks(text);
+  const blocks = buildChatBlocks(normalizeChatAnswerText(text));
   const citationById = new Map(
     (citations || []).map((citation) => [citation.id, citation])
   );
@@ -601,6 +601,20 @@ function ChatAnswer({ citations, text }) {
       })}
     </div>
   );
+}
+
+function normalizeChatAnswerText(text) {
+  const value = String(text || "").trim();
+  if (!value.startsWith("{")) {
+    return value;
+  }
+
+  try {
+    const parsed = JSON.parse(value);
+    return typeof parsed.answer === "string" ? parsed.answer : value;
+  } catch {
+    return value;
+  }
 }
 
 function renderLinkedCitations(text, citationById) {

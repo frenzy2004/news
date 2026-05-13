@@ -13,6 +13,7 @@ import {
   pickBestSearchMatch
 } from "../src/report.js";
 import {
+  attachCareSignalScan,
   buildChatEvidencePack,
   cleanChatMessages
 } from "../src/evidence-pack.js";
@@ -725,6 +726,151 @@ test("chat evidence pack keeps source IDs and selected story context", () => {
   assert.equal(pack.stories[0].source_refs[0], "S2");
   assert.equal(pack.sources[0].url, "https://example.com/context");
   assert.equal(pack.sources[1].url, "https://example.com/hiring");
+});
+
+test("chat evidence pack builds care graph and remaps entity citations", () => {
+  const pack = buildChatEvidencePack({
+    selectedStoryId: "entity-profile-joseph",
+    report: {
+      generated_at: "2026-05-06T00:00:00.000Z",
+      date_range: "Week",
+      source: {
+        provider: "BTW",
+        endpoints: []
+      },
+      businesses: [
+        {
+          id: "joseph",
+          company: "Joseph Chin AIT",
+          website: "",
+          specialization: {
+            inferred_domain: "general-business",
+            market: "Malaysia",
+            watchlist: ["AI Tinkerers", "DocuAsk"]
+          },
+          items: [
+            {
+              rank: 1,
+              story_id: "entity-profile-joseph",
+              title: "Joseph Chin source-backed profile",
+              summary:
+                "Joseph Chin is connected to AI Tinkerers KL and DocuAsk [E1].",
+              why_relevant: "Identity context.",
+              match: { source: "entity_profile" },
+              business_specificity: { score: 70 },
+              business_relevance: {
+                impact_area: "Entity context",
+                audience: "AI builders",
+                recommended_reaction: "Use identity context."
+              },
+              key_points: [
+                "Sources connect Joseph Chin to AI Tinkerers community activity [E1]."
+              ],
+              entity_story: {
+                sections: [
+                  {
+                    title: "Role in the community",
+                    body:
+                      "The strongest sourced signal is AI Tinkerers Kuala Lumpur [E1].",
+                    points: [
+                      "DocuAsk and Prompt Olympics appear in the same source trail [E1]."
+                    ]
+                  }
+                ]
+              },
+              articles: [
+                {
+                  source_id: "E1",
+                  title: "Joseph source",
+                  url: "https://example.com/joseph",
+                  timestamp: "",
+                  summary:
+                    "Joseph Chin works on DocuAsk and AI Tinkerers in Kuala Lumpur."
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      context_resolution: {
+        input_type: "entity_or_keyword_query",
+        original_query: "Joseph Chin AIT",
+        provider: "Exa",
+        resolution_note: "Resolved.",
+        resolved_entity: {
+          name: "Joseph Chin AIT",
+          description: "AI Tinkerers and DocuAsk context.",
+          likely_context: ["AI Tinkerers", "DocuAsk"],
+          keywords: [
+            "joseph chin",
+            "ai tinkerers",
+            "docuask",
+            "kuala lumpur",
+            "malaysia",
+            "prompt olympics"
+          ]
+        },
+        sources: []
+      },
+      errors: []
+    }
+  });
+
+  assert.match(pack.stories[0].summary, /\[S1\]/);
+  assert.doesNotMatch(pack.stories[0].summary, /\[E1\]/);
+  assert.equal(pack.stories[0].entity_story_sections[0].title, "Role in the community");
+  assert.ok(
+    pack.care_graph.interests.some(
+      (interest) => interest.id === "ai-builder-community"
+    )
+  );
+  assert.ok(
+    pack.care_graph.interests.some((interest) => interest.id === "document-ai")
+  );
+  assert.match(pack.care_graph.signal_queries[0], /AI|DocuAsk|Malaysia/i);
+
+  const enriched = attachCareSignalScan({
+    evidencePack: pack,
+    scanQuery: pack.care_graph.signal_queries[0],
+    scanResult: {
+      contextResolution: {
+        provider: "BTW",
+        resolved_entity: {
+          keywords: ["AI Tinkerers", "Malaysia"]
+        },
+        search_terms: ["AI Tinkerers Malaysia"]
+      },
+      items: [
+        {
+          rank: 1,
+          story_id: 300,
+          title: "Malaysia AI Grants",
+          match_type: "adjacent",
+          match: { source: "live" },
+          summary:
+            "Malaysia announced AI grants for local builders and hackathons.",
+          why_relevant:
+            "This may matter to AI Tinkerers because it affects builder funding.",
+          business_specificity: { score: 60 },
+          key_points: ["Funding may support local AI hackathons."],
+          entities: ["Malaysia", "AI"],
+          articles: [
+            {
+              title: "Grant source",
+              url: "https://example.com/grants",
+              timestamp: "2026-05-06T00:00:00Z",
+              summary: "AI grant details."
+            }
+          ]
+        }
+      ]
+    }
+  });
+
+  assert.equal(enriched.fresh_signal_scan.status, "signals_found");
+  assert.equal(enriched.fresh_signal_scan.items[0].title, "Malaysia AI Grants");
+  assert.equal(enriched.fresh_signal_scan.items[0].source_refs[0], "S2");
+  assert.equal(enriched.sources[1].url, "https://example.com/grants");
 });
 
 test("cleanChatMessages trims roles, empty messages, and history length", () => {

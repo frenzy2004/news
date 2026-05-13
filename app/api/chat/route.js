@@ -1,8 +1,10 @@
 import { NextResponse } from "next/server";
 import {
+  attachCareSignalScan,
   buildChatEvidencePack,
   cleanChatMessages
 } from "../../../src/evidence-pack.js";
+import { buildAdjacentSignals } from "../../../src/adjacent-signals.js";
 import { sanitizeAssistantText } from "../../../src/chat-sanitize.js";
 
 export const runtime = "nodejs";
@@ -91,10 +93,11 @@ export async function POST(request) {
     );
   }
 
-  const evidencePack = buildChatEvidencePack({
+  let evidencePack = buildChatEvidencePack({
     report: body.report,
     selectedStoryId: body.selectedStoryId
   });
+  evidencePack = await attachFreshCareSignals(evidencePack);
 
   if (evidencePack.stories.length === 0 && evidencePack.sources.length === 0) {
     return NextResponse.json(
@@ -131,6 +134,86 @@ export async function POST(request) {
       { status: error.status || 500 }
     );
   }
+}
+
+async function attachFreshCareSignals(evidencePack) {
+  const scanQuery = evidencePack.care_graph?.signal_queries?.[0];
+  const apiKey = process.env.BTW_API_KEY;
+
+  if (!scanQuery || !apiKey?.trim()) {
+    return evidencePack;
+  }
+
+  try {
+    const scanResult = await buildAdjacentSignals({
+      apiKey: apiKey.trim(),
+      exaApiKey: process.env.EXA_API_KEY,
+      profile: buildCareScanProfile(evidencePack),
+      query: scanQuery,
+      dateRange: evidencePack.date_range === "Week" ? "Week" : "Now",
+      maxArticles: 12,
+      openAiApiKey: "",
+      openAiModel: process.env.OPENAI_MODEL || DEFAULT_MODEL
+    });
+
+    return attachCareSignalScan({
+      evidencePack,
+      scanResult,
+      scanQuery
+    });
+  } catch (error) {
+    return {
+      ...evidencePack,
+      fresh_signal_scan: {
+        query: cleanString(scanQuery),
+        status: "scan_failed",
+        error: sanitizeAssistantText(error.message || "Fresh signal scan failed."),
+        items: []
+      }
+    };
+  }
+}
+
+function buildCareScanProfile(evidencePack) {
+  const careGraph = evidencePack.care_graph ?? {};
+  const specialization = evidencePack.business?.specialization ?? {};
+  const interestTerms = (careGraph.interests ?? []).flatMap((interest) => [
+    interest.label,
+    ...(interest.signal_terms ?? [])
+  ]);
+  const watchlist = [
+    ...(specialization.watchlist ?? []),
+    ...interestTerms,
+    ...(careGraph.signal_queries ?? [])
+  ].filter(Boolean);
+
+  return {
+    id: cleanString(evidencePack.business?.id) || slugify(careGraph.entity_name),
+    company: cleanString(careGraph.entity_name || evidencePack.business?.company),
+    website: cleanString(evidencePack.business?.website),
+    creatorBackground: [
+      `Entity: ${careGraph.entity_name || evidencePack.business?.company}`,
+      `Likely interests: ${interestTerms.join(", ")}`,
+      `Identity facts: ${(careGraph.identity_facts ?? []).slice(0, 6).join(" ")}`
+    ]
+      .filter(Boolean)
+      .join("\n"),
+    specialization: {
+      inferred_domain: specialization.inferred_domain || "general-business",
+      market: specialization.market || "",
+      city: specialization.city || "",
+      operating_model:
+        specialization.operating_model || "identity-aware signal monitoring",
+      customers:
+        specialization.customers ||
+        "people, companies, and communities connected to this entity",
+      watchlist,
+      reaction_goal:
+        specialization.reaction_goal ||
+        "identify the most relevant live signal and explain what to do next",
+      search_terms: watchlist
+    }
+  };
 }
 
 async function createGroundedResponse({ apiKey, model, messages, evidencePack }) {
@@ -204,8 +287,12 @@ function buildOpenAIRequest({
       "Use only the provided evidence pack. Do not use outside knowledge, memory, or assumptions as facts.",
       "Every factual claim that depends on an article must cite source IDs inline, for example [S1].",
       "If the evidence does not support an answer, say what is unsupported instead of guessing.",
-      "You may make business recommendations only as clearly grounded in the evidence and the business profile.",
-      "Keep answers practical, concise, and specific to the selected business context.",
+      "For people, projects, or communities, reason in this order: first identify who/what the entity is, then infer its care graph, then rank the fresh or adjacent signals by what that entity would actually care about.",
+      "Separate identity evidence from signal evidence. Identity evidence explains who the person/project/community is; signal evidence explains what changed or what to monitor.",
+      "If fresh_signal_scan.items contains usable stories, lead with the most relevant signal and why it matters to the entity's care graph. If it contains no usable stories, say that no fresh signal was found and give the narrowest next scans from care_graph.signal_queries.",
+      "Avoid generic advice like attend, sponsor, or engage unless the evidence directly supports that action. Prefer concrete actions tied to the entity's projects, community, market, or current signal.",
+      "You may make business recommendations only as clearly grounded in the evidence, care graph, and business profile.",
+      "Keep answers practical, specific, and written like a strategist briefing the user, not like a source summary.",
       "Never expose implementation details, endpoint paths, API routes, service URLs, request formats, environment variables, model names, or developer/internal workflow. Do not tell the user to call /api routes. If more evidence is needed, say to run another scan in the app or inspect the clickable source links.",
       plainFallback
         ? "Return plain text. Include source IDs inline and do not wrap the answer in JSON."
@@ -291,11 +378,12 @@ function parseModelOutput(payload, sources) {
     };
   }
 
-  const answer = sanitizeAssistantText(parsed.answer);
+  const normalized = normalizeStructuredAnswer(parsed);
+  const answer = sanitizeAssistantText(normalized.answer);
   const sourceById = new Map(sources.map((source) => [source.id, source]));
   const citedIds = new Set([
-    ...(Array.isArray(parsed.citations)
-      ? parsed.citations.map((citation) => cleanString(citation.id))
+    ...(Array.isArray(normalized.citations)
+      ? normalized.citations.map((citation) => cleanString(citation.id))
       : []),
     ...Array.from(answer.matchAll(/\[(S\d+)\]/g)).map((match) => match[1])
   ]);
@@ -312,8 +400,8 @@ function parseModelOutput(payload, sources) {
   return {
     answer,
     citations,
-    snippets: Array.isArray(parsed.snippets)
-      ? parsed.snippets
+    snippets: Array.isArray(normalized.snippets)
+      ? normalized.snippets
           .map((snippet) => ({
             source_id: cleanString(snippet.source_id),
             text: cleanString(snippet.text)
@@ -321,13 +409,38 @@ function parseModelOutput(payload, sources) {
           .filter((snippet) => snippet.source_id && snippet.text)
           .slice(0, 5)
       : [],
-    unsupported: Array.isArray(parsed.unsupported)
-      ? parsed.unsupported
+    unsupported: Array.isArray(normalized.unsupported)
+      ? normalized.unsupported
           .map(sanitizeAssistantText)
           .filter(Boolean)
           .slice(0, 5)
       : []
   };
+}
+
+function normalizeStructuredAnswer(parsed) {
+  const answer = cleanString(parsed?.answer);
+  const nested = parseJsonObject(answer);
+
+  if (nested?.answer) {
+    return {
+      answer: nested.answer,
+      citations: [
+        ...(Array.isArray(parsed.citations) ? parsed.citations : []),
+        ...(Array.isArray(nested.citations) ? nested.citations : [])
+      ],
+      snippets: [
+        ...(Array.isArray(parsed.snippets) ? parsed.snippets : []),
+        ...(Array.isArray(nested.snippets) ? nested.snippets : [])
+      ],
+      unsupported: [
+        ...(Array.isArray(parsed.unsupported) ? parsed.unsupported : []),
+        ...(Array.isArray(nested.unsupported) ? nested.unsupported : [])
+      ]
+    };
+  }
+
+  return parsed;
 }
 
 function isEmptyModelOutput(parsed) {
@@ -377,4 +490,13 @@ function parseJsonObject(text) {
 
 function cleanString(value) {
   return typeof value === "string" ? value.trim() : "";
+}
+
+function slugify(value) {
+  return (
+    cleanString(value)
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-|-$/g, "") || "care-scan"
+  );
 }
