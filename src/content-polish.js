@@ -68,6 +68,7 @@ export async function synthesizeEntityProfile({
           "Build a concise source-backed entity profile for a business/news relevance app.",
           "Use only the provided source titles, snippets, and URLs. Do not add facts, dates, roles, projects, or biographical claims that are not present in the sources.",
           "Prefer concrete identity facts: role, community, company/project names, location, products, events, and distinctions from similarly named people.",
+          "Cite source IDs inline after factual claims, for example [E1]. Every summary and key point should include at least one source ID.",
           "Write one polished summary sentence and 3 to 6 crisp key points.",
           "Do not mention APIs, scraping, search providers, models, prompts, or internal implementation."
         ].join("\n"),
@@ -119,9 +120,9 @@ export async function synthesizeEntityProfile({
     }
 
     return {
-      summary: cleanPolishedText(parsed.summary),
+      summary: ensureEntityCitation(cleanPolishedText(parsed.summary), usableSources),
       key_points: parsed.key_points
-        .map(cleanPolishedText)
+        .map((point) => ensureEntityCitation(cleanPolishedText(point), usableSources))
         .filter(Boolean)
         .filter((point, index, points) =>
           points.findIndex((candidate) => isDuplicatePoint(point, candidate)) === index
@@ -131,6 +132,15 @@ export async function synthesizeEntityProfile({
   } catch {
     return null;
   }
+}
+
+function ensureEntityCitation(text, sources) {
+  if (!text || /\[E\d+\]/.test(text)) {
+    return text;
+  }
+
+  const firstId = sources[0]?.id || "E1";
+  return `${text} [${firstId}]`;
 }
 
 export async function polishBackgroundItems({

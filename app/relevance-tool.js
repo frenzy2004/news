@@ -605,10 +605,10 @@ function ChatAnswer({ citations, text }) {
 
 function renderLinkedCitations(text, citationById) {
   return String(text || "")
-    .split(/(\[S\d+\])/g)
+    .split(/(\[[SE]\d+\])/g)
     .filter(Boolean)
     .map((part, index) => {
-      const id = part.match(/^\[(S\d+)\]$/)?.[1];
+      const id = part.match(/^\[([SE]\d+)\]$/)?.[1];
       const citation = id ? citationById.get(id) : null;
 
       if (!citation?.url) {
@@ -940,6 +940,10 @@ function formatMatchLabel(source) {
 }
 
 function formatItemMatch(item) {
+  if (isEntityProfileItem(item)) {
+    return "source-backed profile";
+  }
+
   if (item.match_type === "adjacent") {
     return `${formatMatchLabel(item.match?.source)} adjacent`;
   }
@@ -952,7 +956,15 @@ function formatItemMatch(item) {
 }
 
 function isBackgroundItem(item) {
-  return item?.match_type === "background" || item?.match?.source === "exa_background";
+  return (
+    item?.match_type === "background" ||
+    item?.match?.source === "exa_background" ||
+    isEntityProfileItem(item)
+  );
+}
+
+function isEntityProfileItem(item) {
+  return item?.match?.source === "entity_profile";
 }
 
 function showThemeTag(theme) {
@@ -970,6 +982,7 @@ function StoryDetail({
   specialization
 }) {
   const isBackground = isBackgroundItem(item);
+  const isEntityProfile = isEntityProfileItem(item);
 
   return (
     <div className="detail-content">
@@ -1025,35 +1038,39 @@ function StoryDetail({
         </section>
       ) : null}
 
-      <section className="action-brief">
-        <div>
-          <span>Impact area</span>
-          <strong>{item.business_relevance?.impact_area || "Business signal"}</strong>
-        </div>
-        <div>
-          <span>Audience</span>
-          <strong>{item.business_relevance?.audience || "Not specified"}</strong>
-        </div>
-        <div>
-          <span>Recommended reaction</span>
-          <strong>
-            {item.business_relevance?.recommended_reaction ||
-              "Review before taking action."}
-          </strong>
-        </div>
-        {item.business_relevance?.content_angle ? (
+      {isEntityProfile ? <EntityProfileStory item={item} /> : null}
+
+      {!isEntityProfile ? (
+        <section className="action-brief">
           <div>
-            <span>Content angle</span>
-            <strong>{item.business_relevance.content_angle}</strong>
+            <span>Impact area</span>
+            <strong>{item.business_relevance?.impact_area || "Business signal"}</strong>
           </div>
-        ) : null}
-        {item.business_relevance?.cut_reason ? (
-          <div className="cut-warning">
-            <span>Cut reason</span>
-            <strong>{item.business_relevance.cut_reason}</strong>
+          <div>
+            <span>Audience</span>
+            <strong>{item.business_relevance?.audience || "Not specified"}</strong>
           </div>
-        ) : null}
-      </section>
+          <div>
+            <span>Recommended reaction</span>
+            <strong>
+              {item.business_relevance?.recommended_reaction ||
+                "Review before taking action."}
+            </strong>
+          </div>
+          {item.business_relevance?.content_angle ? (
+            <div>
+              <span>Content angle</span>
+              <strong>{item.business_relevance.content_angle}</strong>
+            </div>
+          ) : null}
+          {item.business_relevance?.cut_reason ? (
+            <div className="cut-warning">
+              <span>Cut reason</span>
+              <strong>{item.business_relevance.cut_reason}</strong>
+            </div>
+          ) : null}
+        </section>
+      ) : null}
 
       {isBackground ? (
         <BackgroundContextBrief item={item} />
@@ -1085,32 +1102,36 @@ function StoryDetail({
         </section>
       ) : null}
 
-      <section className="detail-section">
-        <h3>
-          <BriefcaseBusiness size={17} aria-hidden="true" />
-          Why it matters
-        </h3>
-        <p>{item.why_relevant}</p>
-      </section>
+      {!isEntityProfile ? (
+        <>
+          <section className="detail-section">
+            <h3>
+              <BriefcaseBusiness size={17} aria-hidden="true" />
+              Why it matters
+            </h3>
+            <p>{item.why_relevant}</p>
+          </section>
 
-      <section className="detail-section">
-        <h3>
-          <Globe2 size={17} aria-hidden="true" />
-          {isBackground ? "Source summary" : "Story summary"}
-        </h3>
-        <p>{item.summary}</p>
-      </section>
+          <section className="detail-section">
+            <h3>
+              <Globe2 size={17} aria-hidden="true" />
+              {isBackground ? "Source summary" : "Story summary"}
+            </h3>
+            <p>{item.summary}</p>
+          </section>
 
-      <ListSection
-        icon={<Layers3 size={17} />}
-        items={item.key_points}
-        title="Key points"
-      />
-      <ListSection
-        icon={<TimerReset size={17} />}
-        items={item.discourse_notes}
-        title="Discourse notes"
-      />
+          <ListSection
+            icon={<Layers3 size={17} />}
+            items={item.key_points}
+            title="Key points"
+          />
+          <ListSection
+            icon={<TimerReset size={17} />}
+            items={item.discourse_notes}
+            title="Discourse notes"
+          />
+        </>
+      ) : null}
 
       {item.entities?.length ? (
         <section className="detail-section">
@@ -1161,6 +1182,78 @@ function StoryDetail({
         <pre>{JSON.stringify(report, null, 2)}</pre>
       </details>
     </div>
+  );
+}
+
+function EntityProfileStory({ item }) {
+  const citationById = buildArticleCitationMap(item.articles);
+  const sources = item.articles ?? [];
+
+  return (
+    <section className="entity-profile-story">
+      <div className="entity-story-head">
+        <p className="eyebrow">Source-backed story</p>
+        <h3>{item.business_relevance?.content_angle || "Who this is"}</h3>
+        <p>
+          <CitationText citationById={citationById} text={item.summary} />
+        </p>
+      </div>
+
+      {item.key_points?.length ? (
+        <div className="entity-story-points">
+          {item.key_points.slice(0, 6).map((point) => (
+            <p key={point}>
+              <CitationText citationById={citationById} text={point} />
+            </p>
+          ))}
+        </div>
+      ) : null}
+
+      {sources.length ? (
+        <div className="entity-story-sources">
+          <span>Sources used</span>
+          <div>
+            {sources.slice(0, 6).map((source, index) => {
+              const id = source.source_id || `E${index + 1}`;
+
+              return (
+                <a
+                  href={source.url}
+                  key={`${id}-${source.url}`}
+                  rel="noreferrer"
+                  target="_blank"
+                  title={source.title}
+                >
+                  <strong>{id}</strong>
+                  {source.title || "Source"}
+                </a>
+              );
+            })}
+          </div>
+        </div>
+      ) : null}
+    </section>
+  );
+}
+
+function CitationText({ citationById, text }) {
+  return renderLinkedCitations(text, citationById);
+}
+
+function buildArticleCitationMap(articles = []) {
+  return new Map(
+    articles.map((article, index) => {
+      const id = article.source_id || `E${index + 1}`;
+
+      return [
+        id,
+        {
+          id,
+          title: article.title || "Source",
+          url: article.url
+        }
+      ];
+    })
   );
 }
 
@@ -1248,6 +1341,8 @@ function ArticleLinks({ articles, showAll = false }) {
 }
 
 function ArticleLink({ article }) {
+  const sourceId = article.source_id;
+
   return (
     <a
       className="article-link"
@@ -1256,7 +1351,10 @@ function ArticleLink({ article }) {
       target="_blank"
     >
       <span>
-        <strong>{article.title || "Source article"}</strong>
+        <strong>
+          {sourceId ? <em>{sourceId}</em> : null}
+          {article.title || "Source article"}
+        </strong>
         <small>{article.timestamp || article.summary || "BTW source"}</small>
       </span>
       <ExternalLink size={16} aria-hidden="true" />

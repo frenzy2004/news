@@ -8,7 +8,7 @@ import { normalizeStories } from "./report.js";
 
 const MAX_ADJACENT_ITEMS = 12;
 const MAX_BACKGROUND_ITEMS = 20;
-const EXA_CONTEXT_RESULTS_PER_QUERY = 8;
+const EXA_CONTEXT_RESULTS_PER_QUERY = 5;
 const EXA_CONTEXT_SOURCE_LIMIT = 50;
 const BTW_DEEP_RESULT_LIMIT = 100;
 const BTW_DEEP_DETAIL_LIMIT = 60;
@@ -120,6 +120,23 @@ const AMBIGUOUS_MATCH_TERMS = new Set([
   "twitter",
   "unleashing"
 ]);
+const GEOGRAPHIC_CONTEXT_TERMS = new Set([
+  "asean",
+  "francisco",
+  "indonesia",
+  "jakarta",
+  "kuala",
+  "kuala lumpur",
+  "lumpur",
+  "malaysia",
+  "san",
+  "san francisco",
+  "singapore",
+  "southeast asia",
+  "southeast asian",
+  "united kingdom",
+  "united states"
+]);
 const QUERY_ALIASES = [
   {
     pattern: /\bait\b/i,
@@ -144,6 +161,58 @@ const SOURCE_CONTEXT_TERMS = [
   "startup ecosystem",
   "tech startups",
   "venture capital"
+];
+const ENTITY_SOURCE_DOMAINS = [
+  "linkedin.com",
+  "github.com",
+  "x.com",
+  "twitter.com",
+  "medium.com",
+  "substack.com",
+  "crunchbase.com",
+  "producthunt.com",
+  "devpost.com",
+  "angellist.com",
+  "wellfound.com",
+  "yc.com",
+  "techcrunch.com",
+  "theinformation.com",
+  "wired.com",
+  "theverge.com",
+  "venturebeat.com",
+  "a16z.com",
+  "sequoiacap.com",
+  "500.co",
+  "500global.com",
+  "e27.co",
+  "techinasia.com",
+  "digitalnewsasia.com",
+  "theedgemalaysia.com",
+  "vulcanpost.com",
+  "says.com",
+  "lowyat.net",
+  "businesswire.com",
+  "prnewswire.com",
+  "globenewswire.com",
+  "forbes.com",
+  "fortune.com",
+  "bloomberg.com",
+  "reuters.com",
+  "apnews.com",
+  "bbc.com",
+  "cnn.com",
+  "cnbc.com",
+  "wsj.com",
+  "nytimes.com",
+  "aitinkerers.org",
+  "luma.com",
+  "meetup.com",
+  "eventbrite.com",
+  "youtube.com",
+  "spotify.com",
+  "podcasts.apple.com",
+  "speakerdeck.com",
+  "slideshare.net"
 ];
 
 export async function buildAdjacentSignals({
@@ -213,8 +282,8 @@ export async function buildAdjacentSignals({
       item,
       candidate: candidates[index],
       contextResolution
-      })
-    );
+    })
+  );
 
   if (!entityFirst && items.length === 0) {
     const exaContextResolution = await resolveExaContext({
@@ -268,6 +337,21 @@ export async function buildAdjacentSignals({
         contextResolution
       })
     );
+  }
+
+  if (entityFirst && items.length > 0 && contextResolution.sources.length > 0) {
+    const profileItem = await buildEntityProfileItem({
+      contextResolution,
+      maxArticles,
+      query: cleanedQuery,
+      openAiApiKey,
+      openAiModel,
+      fetchImpl
+    });
+
+    if (profileItem) {
+      items = rerankItems([profileItem, ...items]).slice(0, MAX_BACKGROUND_ITEMS);
+    }
   }
 
   if (items.length === 0 && contextResolution.sources.length > 0) {
@@ -609,21 +693,18 @@ function buildSearchTerms({ query, contextResolution }) {
 function buildEntitySearchQueries({ query, expandedQuery, aliasTerms }) {
   const identity = compactWhitespace(expandedQuery || query);
   const aliases = aliasTerms.join(" ");
+  const domainSweeps = chunk(ENTITY_SOURCE_DOMAINS, 5).map((domains) => {
+    return `${domains.map((domain) => `site:${domain}`).join(" OR ")} ${identity}`;
+  });
   const lenses = [
-    `${identity} official website biography projects`,
-    `${identity} founder software engineer entrepreneur`,
-    `${identity} AI Tinkerers AI community chapter organizer`,
-    `${identity} Kuala Lumpur Malaysia AI startup developer community`,
-    `${identity} DocuAsk Prompt Olympics AI Caller LinkedInfluencer`,
-    `${identity} LinkedIn GitHub Crunchbase personal site`,
-    `site:aitinkerers.org ${identity} ${aliases}`,
-    `site:github.com ${identity}`,
-    `site:linkedin.com/in ${identity}`,
-    `site:medium.com ${identity}`,
-    `site:crunchbase.com ${identity}`,
-    `site:producthunt.com ${identity}`,
-    `site:substack.com ${identity}`,
-    `site:devpost.com ${identity}`
+    `${identity} official website biography profile projects`,
+    `${identity} founder entrepreneur company startup product`,
+    `${identity} community organizer conference speaker`,
+    `${identity} interview podcast article news`,
+    `${identity} launch funding acquisition partnership`,
+    `${identity} LinkedIn GitHub personal site portfolio`,
+    aliases ? `${identity} ${aliases} official community project` : "",
+    ...domainSweeps
   ];
 
   return [...new Set(lenses.map(compactWhitespace).filter((item) => item.length >= 3))];
@@ -758,6 +839,10 @@ function scoreAdjacentCandidate({ candidate, query, contextResolution }) {
   const directTerms = buildDirectMatchTerms({ query, keywords });
   const domainTerms = buildDomainMatchTerms(keywords);
   const directRequired = requiresDirectEntityHit({ query });
+  const requiredDirectTerms = buildRequiredDirectEntityTerms({
+    query,
+    keywords
+  });
   let score = 0;
 
   directTerms.forEach((term) => {
@@ -791,6 +876,13 @@ function scoreAdjacentCandidate({ candidate, query, contextResolution }) {
   );
 
   if (directRequired && uniqueDirectHits.length === 0) {
+    return 0;
+  }
+
+  if (
+    requiredDirectTerms.length > 0 &&
+    !uniqueDirectHits.some((term) => requiredDirectTerms.includes(term))
+  ) {
     return 0;
   }
 
@@ -965,6 +1057,7 @@ async function buildEntityProfileItem({
     article_count: sources.length,
     discovered_utc: "",
     articles: sources.map((source) => ({
+      source_id: source.id,
       title: source.title,
       summary: source.snippet,
       url: source.url,
@@ -1006,7 +1099,7 @@ function buildDeterministicEntityProfile({ contextResolution, query, sources }) 
   const keywordPhrase = keywords.slice(0, 8).join(", ");
   const topTitles = sources
     .slice(0, 3)
-    .map((source) => source.title)
+    .map((source) => `${source.title} [${source.id}]`)
     .filter(Boolean)
     .join("; ");
   const summary = compactWhitespace(
@@ -1034,48 +1127,68 @@ function buildSourceBackedProfileFacts({ name, sources }) {
   addFactIf(
     facts,
     text.includes("ai tinkerers") || text.includes("ai community"),
-    `Sources connect ${name} to AI Tinkerers or an AI community context.`
+    `Sources connect ${name} to AI Tinkerers or an AI community context. ${sourceRefsForText(sources, "ai tinkerers ai community")}`
   );
   addFactIf(
     facts,
     text.includes("kuala lumpur") || text.includes("malaysia"),
-    `Sources place the context around Kuala Lumpur, Malaysia, or the Malaysian tech ecosystem.`
+    `Sources place the context around Kuala Lumpur, Malaysia, or the Malaysian tech ecosystem. ${sourceRefsForText(sources, "kuala lumpur malaysia")}`
   );
   addFactIf(
     facts,
     text.includes("docuask"),
-    `Sources mention DocuAsk as a project or company connected to ${name}.`
+    `Sources mention DocuAsk as a project or company connected to ${name}. ${sourceRefsForText(sources, "docuask")}`
   );
   addFactIf(
     facts,
     text.includes("prompt olympics"),
-    "Sources mention Prompt Olympics as an LLM challenge, hackathon, or event format."
+    `Sources mention Prompt Olympics as an LLM challenge, hackathon, or event format. ${sourceRefsForText(sources, "prompt olympics")}`
   );
   addFactIf(
     facts,
     text.includes("founder") || text.includes("founded"),
-    `Sources describe founder or organizer activity connected to ${name}.`
+    `Sources describe founder or organizer activity connected to ${name}. ${sourceRefsForText(sources, "founder founded organizer")}`
   );
   addFactIf(
     facts,
     text.includes("software engineer") || text.includes("developer"),
-    `Sources describe software engineering, developer, or builder work connected to ${name}.`
+    `Sources describe software engineering, developer, or builder work connected to ${name}. ${sourceRefsForText(sources, "software engineer developer builder")}`
   );
 
   sources.slice(0, 4).forEach((source) => {
     const sentence = firstSentence(source.snippet);
     if (sentence && !facts.some((fact) => isNearDuplicateFact(fact, sentence))) {
-      facts.push(sentence);
+      facts.push(`${sentence} [${source.id}]`);
     }
   });
 
   return facts.slice(0, 6);
 }
 
+function sourceRefsForText(sources, needles) {
+  const terms = normalize(needles).split(" ").filter(Boolean);
+  const refs = sources
+    .filter((source) => {
+      const text = normalize([source.title, source.snippet, source.url].join(" "));
+      return terms.some((term) => containsNormalizedTerm(text, term));
+    })
+    .slice(0, 3)
+    .map((source) => `[${source.id}]`);
+
+  return refs.length ? refs.join(" ") : `[${sources[0]?.id || "E1"}]`;
+}
+
 function addFactIf(facts, condition, fact) {
   if (condition && !facts.some((existing) => isNearDuplicateFact(existing, fact))) {
     facts.push(fact);
   }
+}
+
+function rerankItems(items) {
+  return items.map((item, index) => ({
+    ...item,
+    rank: index + 1
+  }));
 }
 
 function isNearDuplicateFact(left, right) {
@@ -1208,6 +1321,7 @@ function buildEntityDescription({ query, sources, keywords }) {
 
 function extractEntityKeywords({ query, sources }) {
   const expandedQuery = expandQueryAliases(query);
+  const sourcePhrases = extractSourcePhrases({ query, sources });
   const text = normalize(
     [expandedQuery, ...sources.flatMap((source) => [source.title, source.snippet])].join(" ")
   );
@@ -1242,8 +1356,53 @@ function extractEntityKeywords({ query, sources }) {
   return mergeUnique([
     ...buildQueryIdentityTerms(query),
     ...buildAliasTerms(query),
+    ...sourcePhrases,
     ...keywords.filter((keyword) => !ENTITY_STOP_WORDS.has(keyword))
-  ]).slice(0, 24);
+  ]).slice(0, 40);
+}
+
+function extractSourcePhrases({ query, sources }) {
+  const rawText = [
+    query,
+    ...sources.flatMap((source) => [source.title, source.snippet, source.url])
+  ].join(" ");
+  const matches = rawText.match(
+    /\b(?:[A-Z][A-Za-z0-9]+|[A-Z]{2,}|[A-Z][a-z]+[A-Z][A-Za-z0-9]*)(?:[-\s]+(?:[A-Z][A-Za-z0-9]+|[A-Z]{2,}|[A-Z][a-z]+[A-Z][A-Za-z0-9]*)){0,4}\b/g
+  ) ?? [];
+
+  return mergeUnique(
+    matches
+      .map((match) => normalize(match))
+      .filter(isUsefulSourcePhrase)
+  ).slice(0, 24);
+}
+
+function isUsefulSourcePhrase(phrase) {
+  if (!isMatchableTerm(phrase) || GEOGRAPHIC_CONTEXT_TERMS.has(phrase)) {
+    return false;
+  }
+
+  const genericPhrases = new Set([
+    "about",
+    "article",
+    "background",
+    "business",
+    "company",
+    "contact",
+    "founder",
+    "home",
+    "linkedin",
+    "profile",
+    "project",
+    "projects",
+    "software engineer",
+    "source",
+    "startup",
+    "technology",
+    "website"
+  ]);
+
+  return !genericPhrases.has(phrase);
 }
 
 function rankContextSources({ query, sources }) {
@@ -1514,6 +1673,40 @@ function buildDirectMatchTerms({ query, keywords }) {
     .filter(isMatchableTerm);
 }
 
+function buildRequiredDirectEntityTerms({ query, keywords }) {
+  const queryTerms = buildQueryIdentityTerms(query)
+    .map(normalize)
+    .filter(isSpecificEntityTerm);
+  const brandTerms = (keywords ?? [])
+    .map(normalize)
+    .filter((term) => IDENTITY_BRAND_TERMS.has(term));
+  const aliasTerms = buildAliasTerms(query)
+    .map(normalize)
+    .filter(isSpecificEntityAlias);
+
+  return mergeUnique([...queryTerms, ...brandTerms, ...aliasTerms]);
+}
+
+function isSpecificEntityTerm(term) {
+  if (!isMatchableTerm(term) || GEOGRAPHIC_CONTEXT_TERMS.has(term)) {
+    return false;
+  }
+
+  if (IDENTITY_BRAND_TERMS.has(term) || term.includes(" ")) {
+    return true;
+  }
+
+  return !DOMAIN_KEYWORD_ALLOWLIST.has(term);
+}
+
+function isSpecificEntityAlias(term) {
+  return (
+    term.includes("tinkerers") ||
+    term === "ai community" ||
+    term === "developer community"
+  );
+}
+
 function buildDomainMatchTerms(keywords) {
   return mergeUnique(keywords ?? [])
     .map(normalize)
@@ -1660,6 +1853,15 @@ function mergeUnique(values) {
   });
 
   return merged;
+}
+
+function chunk(values, size) {
+  const chunks = [];
+  for (let index = 0; index < values.length; index += size) {
+    chunks.push(values.slice(index, index + size));
+  }
+
+  return chunks;
 }
 
 const ENTITY_STOP_WORDS = new Set([

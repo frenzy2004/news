@@ -979,10 +979,11 @@ test("adjacent signals use Exa context and BTW search when strict matches are em
 
   assert.equal(adjacent.contextResolution.used_exa, true);
   assert.ok(seenQueries.some((query) => /malaysia|startup|ai/i.test(query)));
-  assert.equal(adjacent.items.length, 1);
-  assert.equal(adjacent.items[0].match_type, "adjacent");
-  assert.equal(adjacent.items[0].business_specificity.gate, "adjacent");
-  assert.equal(adjacent.items[0].articles[0].url, "https://example.com/ai-funding");
+  assert.equal(adjacent.items.length, 2);
+  assert.equal(adjacent.items[0].match.source, "entity_profile");
+  assert.equal(adjacent.items[1].match_type, "adjacent");
+  assert.equal(adjacent.items[1].business_specificity.gate, "adjacent");
+  assert.equal(adjacent.items[1].articles[0].url, "https://example.com/ai-funding");
 });
 
 test("sparse entity queries enrich identity before BTW adjacent search", async () => {
@@ -1054,8 +1055,83 @@ test("sparse entity queries enrich identity before BTW adjacent search", async (
   assert.equal(adjacent.contextResolution.provider, "Exa");
   assert.equal(adjacent.contextResolution.used_exa, true);
   assert.equal(adjacent.contextResolution.deep_scan.stage, "entity_enrichment_first");
-  assert.equal(adjacent.items[0].match_type, "adjacent");
-  assert.equal(adjacent.items[0].articles[0].url, "https://example.com/btw-source");
+  assert.equal(adjacent.items[0].match.source, "entity_profile");
+  assert.equal(adjacent.items[1].match_type, "adjacent");
+  assert.equal(adjacent.items[1].articles[0].url, "https://example.com/btw-source");
+});
+
+test("entity queries do not treat generic Malaysia AI infrastructure as adjacent", async () => {
+  const fetchImpl = createMockFetch({
+    "/search": () => ({
+      results: [
+        {
+          title: "Joseph Chin - This is the main page",
+          url: "https://www.josephch.in/",
+          text:
+            "Joseph Chin works on DocuAsk and is connected to AI Tinkerers Kuala Lumpur in Malaysia."
+        },
+        {
+          title: "Building a Community, One Crazy Week at a Time - Joseph Chin",
+          url: "https://www.josephch.in/posts/the-year-everything-changed",
+          text:
+            "Joseph Chin describes building the AI Tinkerers Kuala Lumpur community and Prompt Olympics."
+        }
+      ]
+    }),
+    "/api/trends/list": () => ({
+      Stories: []
+    }),
+    "/api/trends/search": () => ({
+      LiveStories: [],
+      HistoricalStories: [
+        {
+          StoryId: 1201,
+          Title: "ByteDance AI Expansion",
+          Body:
+            "ByteDance is investing $2.5 billion in AI infrastructure in Malaysia with Nvidia chips.",
+          Theme: "Technology expansion",
+          CategoryKeys: ["Technology", "Business"],
+          ViralityScore: 1.1,
+          KeyPoints: [
+            "ByteDance is expanding AI infrastructure in Malaysia."
+          ],
+          Entities: ["ByteDance", "Malaysia", "Nvidia"],
+          ArticleCount: 9,
+          Articles: [
+            {
+              Title: "ByteDance source",
+              Url: "https://example.com/bytedance",
+              Timestamp: "2026-05-08T00:00:00Z"
+            }
+          ]
+        }
+      ]
+    })
+  });
+
+  const adjacent = await buildAdjacentSignals({
+    apiKey: "btw-key",
+    exaApiKey: "exa-key",
+    profile: {
+      id: "joseph-ait-malaysia",
+      company: "Joseph Chin AIT Malaysia",
+      website: "",
+      creatorBackground: "JOSEPH CHIN AIT MALAYSIA",
+      specialization: {
+        inferred_domain: "general-business",
+        search_terms: []
+      }
+    },
+    query: "JOSEPH CHIN AIT MALAYSIA",
+    fetchImpl
+  });
+
+  assert.equal(adjacent.items[0].match.source, "entity_profile");
+  assert.ok(adjacent.items.every((item) => item.title !== "ByteDance AI Expansion"));
+  assert.ok(
+    adjacent.items[0].key_points.join(" ").includes("AI Tinkerers") ||
+      adjacent.items[0].summary.includes("AI Tinkerers")
+  );
 });
 
 test("adjacent signals reject weak substring and generic global matches", async () => {
