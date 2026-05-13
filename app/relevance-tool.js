@@ -1049,9 +1049,15 @@ function StoryDetail({
   return (
     <div className="detail-content">
       <div className="detail-toolbar">
-        <div>
-          <p className="eyebrow">{isBackground ? "Resolved source" : "Selected signal"}</p>
-          <h2>{item.title}</h2>
+        <div className="detail-title-block">
+          <p className="eyebrow">
+            {isEntityProfile
+              ? "Source-backed profile"
+              : isBackground
+                ? "Resolved source"
+                : "Selected signal"}
+          </p>
+          <h2>{formatDetailTitle(item)}</h2>
         </div>
         <div className="detail-action-row">
           <button className="chat-inline-action" type="button" onClick={onOpenChat}>
@@ -1252,6 +1258,14 @@ function StoryDetail({
       </details>
     </div>
   );
+}
+
+function formatDetailTitle(item) {
+  if (isEntityProfileItem(item)) {
+    return String(item.title || "").replace(/\s+source-backed profile$/i, "");
+  }
+
+  return item.title;
 }
 
 function EntityProfileStory({ item }) {
