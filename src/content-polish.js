@@ -1,5 +1,17 @@
 const DEFAULT_MODEL = "gpt-5";
 const OPENAI_POLISH_LIMIT = 8;
+const ENTITY_PROFILE_SCHEMA = {
+  type: "object",
+  additionalProperties: false,
+  required: ["summary", "key_points"],
+  properties: {
+    summary: { type: "string" },
+    key_points: {
+      type: "array",
+      items: { type: "string" }
+    }
+  }
+};
 const POLISH_SCHEMA = {
   type: "object",
   additionalProperties: false,
@@ -23,6 +35,103 @@ const POLISH_SCHEMA = {
     }
   }
 };
+
+export async function synthesizeEntityProfile({
+  query,
+  sources,
+  openAiApiKey,
+  model = DEFAULT_MODEL,
+  fetchImpl = globalThis.fetch
+} = {}) {
+  const usableSources = Array.isArray(sources)
+    ? sources
+        .filter((source) => source?.url && (source.title || source.snippet))
+        .slice(0, 12)
+    : [];
+
+  if (!usableSources.length || !openAiApiKey || !openAiApiKey.trim()) {
+    return null;
+  }
+
+  try {
+    const response = await fetchImpl("https://api.openai.com/v1/responses", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${openAiApiKey.trim()}`,
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        model,
+        store: false,
+        max_output_tokens: 1800,
+        instructions: [
+          "Build a concise source-backed entity profile for a business/news relevance app.",
+          "Use only the provided source titles, snippets, and URLs. Do not add facts, dates, roles, projects, or biographical claims that are not present in the sources.",
+          "Prefer concrete identity facts: role, community, company/project names, location, products, events, and distinctions from similarly named people.",
+          "Write one polished summary sentence and 3 to 6 crisp key points.",
+          "Do not mention APIs, scraping, search providers, models, prompts, or internal implementation."
+        ].join("\n"),
+        input: [
+          {
+            role: "user",
+            content: [
+              {
+                type: "input_text",
+                text: JSON.stringify({
+                  query: cleanText(query),
+                  sources: usableSources.map((source, index) => ({
+                    id: source.id || `E${index + 1}`,
+                    title: cleanText(source.title),
+                    url: cleanText(source.url),
+                    published_date: cleanText(source.published_date),
+                    text: truncate(cleanScrapedText(source.snippet), 1100)
+                  }))
+                })
+              }
+            ]
+          }
+        ],
+        reasoning: model.startsWith("gpt-5")
+          ? {
+              effort: "low"
+            }
+          : undefined,
+        text: {
+          format: {
+            type: "json_schema",
+            name: "source_backed_entity_profile",
+            strict: true,
+            schema: ENTITY_PROFILE_SCHEMA
+          }
+        }
+      }),
+      signal: AbortSignal.timeout(45000)
+    });
+
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      throw new Error(payload.error?.message || "Entity profile synthesis failed.");
+    }
+
+    const parsed = parseModelJson(payload);
+    if (!parsed?.summary || !Array.isArray(parsed.key_points)) {
+      return null;
+    }
+
+    return {
+      summary: cleanPolishedText(parsed.summary),
+      key_points: parsed.key_points
+        .map(cleanPolishedText)
+        .filter(Boolean)
+        .filter((point, index, points) =>
+          points.findIndex((candidate) => isDuplicatePoint(point, candidate)) === index
+        )
+        .slice(0, 6)
+    };
+  } catch {
+    return null;
+  }
+}
 
 export async function polishBackgroundItems({
   items,

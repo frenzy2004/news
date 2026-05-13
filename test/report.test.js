@@ -985,7 +985,7 @@ test("adjacent signals use Exa context and BTW search when strict matches are em
   assert.equal(adjacent.items[0].articles[0].url, "https://example.com/ai-funding");
 });
 
-test("adjacent signals exhaust BTW deep scan before calling Exa", async () => {
+test("sparse entity queries enrich identity before BTW adjacent search", async () => {
   let exaCalls = 0;
   const fetchImpl = createMockFetch({
     "/search": () => {
@@ -993,9 +993,10 @@ test("adjacent signals exhaust BTW deep scan before calling Exa", async () => {
       return {
         results: [
           {
-            title: "Should not be used",
+            title: "Joseph Chin and AI Tinkerers Kuala Lumpur",
             url: "https://example.com/exa",
-            text: "Exa fallback should not run when BTW finds a source-backed signal."
+            text:
+              "Joseph Chin is connected to AI Tinkerers Kuala Lumpur, Malaysia, and DocuAsk founder context."
           }
         ]
       };
@@ -1049,10 +1050,10 @@ test("adjacent signals exhaust BTW deep scan before calling Exa", async () => {
     fetchImpl
   });
 
-  assert.equal(exaCalls, 0);
-  assert.equal(adjacent.contextResolution.provider, "BTW");
-  assert.equal(adjacent.contextResolution.used_exa, false);
-  assert.equal(adjacent.contextResolution.deep_scan.stage, "btw_first");
+  assert.ok(exaCalls > 0);
+  assert.equal(adjacent.contextResolution.provider, "Exa");
+  assert.equal(adjacent.contextResolution.used_exa, true);
+  assert.equal(adjacent.contextResolution.deep_scan.stage, "entity_enrichment_first");
   assert.equal(adjacent.items[0].match_type, "adjacent");
   assert.equal(adjacent.items[0].articles[0].url, "https://example.com/btw-source");
 });
@@ -1112,10 +1113,11 @@ test("adjacent signals reject weak substring and generic global matches", async 
     fetchImpl
   });
 
-  assert.equal(adjacent.items.length, 1);
+  assert.equal(adjacent.items.length, 2);
   assert.equal(adjacent.items[0].match_type, "background");
-  assert.equal(adjacent.items[0].title, "About Me - Khailee Ng");
-  assert.notEqual(adjacent.items[0].title, "China Blocks Meta");
+  assert.match(adjacent.items[0].title, /source-backed profile/);
+  assert.equal(adjacent.items[1].title, "About Me - Khailee Ng");
+  assert.notEqual(adjacent.items[1].title, "China Blocks Meta");
 });
 
 test("adjacent signals reject first-name-only person matches", async () => {
@@ -1173,9 +1175,10 @@ test("adjacent signals reject first-name-only person matches", async () => {
     fetchImpl
   });
 
-  assert.equal(adjacent.items.length, 1);
+  assert.equal(adjacent.items.length, 2);
   assert.equal(adjacent.items[0].match_type, "background");
-  assert.equal(adjacent.items[0].title, "Joseph Chin - DocuAsk");
+  assert.match(adjacent.items[0].title, /source-backed profile/);
+  assert.equal(adjacent.items[1].title, "Joseph Chin - DocuAsk");
 });
 
 test("background sources expand AIT and rank identity context before event pages", async () => {
@@ -1245,9 +1248,11 @@ test("background sources expand AIT and rank identity context before event pages
     fetchImpl
   });
 
-  assert.equal(adjacent.items.length, 6);
-  assert.match(adjacent.items[0].title, /AI community/);
-  assert.doesNotMatch(adjacent.items[0].title, /Eventsize/);
+  assert.equal(adjacent.items.length, 7);
+  assert.match(adjacent.items[0].title, /source-backed profile/);
+  assert.match(adjacent.items[0].key_points.join(" "), /AI Tinkerers/);
+  assert.match(adjacent.items[1].title, /AI community/);
+  assert.doesNotMatch(adjacent.items[1].title, /Eventsize/);
   assert.ok(adjacent.contextResolution.resolved_entity.keywords.includes("ai tinkerers"));
   assert.ok(!adjacent.items[0].business_specificity.terms.includes("ait"));
   assert.doesNotMatch(adjacent.items[0].why_relevant, /next scan/i);

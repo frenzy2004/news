@@ -65,6 +65,8 @@ Each item includes BTW's business-specific `why_relevant` reason plus deep trend
 
 The Next.js UI includes a source-grounded chat drawer after a scan finishes. It sends the selected BTW report evidence to `/api/chat`, uses the OpenAI Responses API server-side, and asks the model to answer only from the evidence pack with article citations. Keep `OPENAI_API_KEY` server-only in `.env` or Vercel environment variables; never expose it with `NEXT_PUBLIC_`.
 
-## Sparse query handling
+## Sparse query and entity handling
 
-When a short person, company, or keyword query has no strict BTW match, the API runs an adjacent lane instead of dead-ending. If `EXA_API_KEY` is configured, Exa resolves the likely entity/background sources first, then BTW `/api/trends/search` finds nearby live or historical signals. These items are labeled `adjacent` or `background` so they are not confused with direct BTW matches.
+When a short person, company, or keyword query is entered, the API treats it as an entity-resolution problem before showing raw results. If `EXA_API_KEY` is configured, it runs multiple targeted source searches across official, community, founder, project, and professional-profile lenses, builds a source-backed profile, then uses the enriched context to search BTW for nearby live or historical signals.
+
+Direct BTW matches are labeled `adjacent`. Source-grounded identity context is labeled `background` so it is not confused with live news.
