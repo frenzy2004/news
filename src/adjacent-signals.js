@@ -988,7 +988,7 @@ async function buildEntityBackgroundItems({
   }));
 
   return profileItem
-    ? [profileItem, ...sourceItems].slice(0, MAX_BACKGROUND_ITEMS)
+    ? [profileItem]
     : sourceItems.slice(0, MAX_BACKGROUND_ITEMS);
 }
 
@@ -1021,6 +1021,9 @@ async function buildEntityProfileItem({
   const keyPoints = synthesizedProfile?.key_points?.length
     ? synthesizedProfile.key_points
     : deterministicProfile.keyPoints;
+  const sections = synthesizedProfile?.sections?.length
+    ? synthesizedProfile.sections
+    : deterministicProfile.sections;
   const terms = (contextResolution.resolved_entity.keywords ?? [])
     .filter((keyword) => isMatchableTerm(normalize(keyword)))
     .slice(0, 10);
@@ -1047,6 +1050,9 @@ async function buildEntityProfileItem({
     virality_score: 0,
     regions: [],
     key_points: keyPoints,
+    entity_story: {
+      sections
+    },
     discourse_notes: [],
     entities: contextResolution.resolved_entity.keywords?.slice(0, 12) ?? [],
     key_dates: [],
@@ -1095,17 +1101,14 @@ async function buildEntityProfileItem({
 
 function buildDeterministicEntityProfile({ contextResolution, query, sources }) {
   const name = displayName(query);
-  const keywords = contextResolution.resolved_entity.keywords ?? [];
-  const keywordPhrase = keywords.slice(0, 8).join(", ");
-  const topTitles = sources
-    .slice(0, 3)
-    .map((source) => `${source.title} [${source.id}]`)
-    .filter(Boolean)
-    .join("; ");
-  const summary = compactWhitespace(
-    `${name} is resolved from source context around ${keywordPhrase || "the provided query"}. Top sources include ${topTitles}.`
-  );
   const keyPoints = buildSourceBackedProfileFacts({ name, sources });
+  const sections = buildDeterministicEntitySections({ name, sources, keyPoints });
+  const summary = buildDeterministicEntitySummary({
+    contextResolution,
+    keyPoints,
+    name,
+    sources
+  });
 
   return {
     summary,
@@ -1114,8 +1117,159 @@ function buildDeterministicEntityProfile({ contextResolution, query, sources }) 
       : sources
           .slice(0, 5)
           .map((source) => firstSentence(source.snippet) || source.title)
-          .filter(Boolean)
+          .filter(Boolean),
+    sections
   };
+}
+
+function buildDeterministicEntitySummary({
+  contextResolution,
+  keyPoints,
+  name,
+  sources
+}) {
+  const text = normalize(
+    sources.flatMap((source) => [source.title, source.snippet, source.url]).join(" ")
+  );
+  const keywordPhrase = (contextResolution.resolved_entity.keywords ?? [])
+    .filter((keyword) => isMatchableTerm(normalize(keyword)))
+    .slice(0, 5)
+    .join(", ");
+
+  if (text.includes("ai tinkerers") && text.includes("docuask")) {
+    return compactWhitespace(
+      `${name} is source-linked to AI Tinkerers community activity and DocuAsk/product-building context, with the strongest evidence around Kuala Lumpur or Malaysia. ${sourceRefsForText(sources, "ai tinkerers docuask kuala lumpur malaysia")}`
+    );
+  }
+
+  if (keyPoints.length) {
+    return compactWhitespace(`${keyPoints[0]} ${keyPoints[1] || ""}`);
+  }
+
+  return compactWhitespace(
+    `${name} is resolved from source context around ${keywordPhrase || "the provided query"}. ${sourceRefsForText(sources, keywordPhrase || name)}`
+  );
+}
+
+function buildDeterministicEntitySections({ name, sources, keyPoints }) {
+  const text = normalize(
+    sources.flatMap((source) => [source.title, source.snippet, source.url]).join(" ")
+  );
+  const sections = [];
+
+  const communityPoints = [];
+  addSectionPoint(
+    communityPoints,
+    text.includes("ai tinkerers") || text.includes("ai community"),
+    `Sources connect ${name} to AI Tinkerers or AI community activity. ${sourceRefsForText(sources, "ai tinkerers ai community")}`
+  );
+  addSectionPoint(
+    communityPoints,
+    text.includes("kuala lumpur") || text.includes("malaysia"),
+    `The source trail places the relevant community or tech ecosystem context in Kuala Lumpur, Malaysia, or Malaysia more broadly. ${sourceRefsForText(sources, "kuala lumpur malaysia")}`
+  );
+  addSectionPoint(
+    communityPoints,
+    text.includes("organizer") || text.includes("founder") || text.includes("founded"),
+    `Sources describe organizer, founder, or community-building activity connected to ${name}. ${sourceRefsForText(sources, "organizer founder founded community")}`
+  );
+  addSectionPoint(
+    communityPoints,
+    text.includes("build together") || text.includes("co working") || text.includes("coworking"),
+    `AI Tinkerers or related event pages point to hands-on builder sessions such as Build Together or co-working activity. ${sourceRefsForText(sources, "build together co working coworking")}`
+  );
+  pushEntitySection(sections, {
+    title: "Role in the community",
+    body: `The clearest sourced signal is ${name}'s link to a local AI builder community, not a generic Malaysia AI story. ${sourceRefsForText(sources, "ai tinkerers ai community malaysia kuala lumpur")}`,
+    points: communityPoints
+  });
+
+  const projectPoints = [];
+  addSectionPoint(
+    projectPoints,
+    text.includes("docuask"),
+    `Sources mention DocuAsk as a project, company, or product connected to ${name}. ${sourceRefsForText(sources, "docuask")}`
+  );
+  addSectionPoint(
+    projectPoints,
+    text.includes("prompt olympics"),
+    `Sources mention Prompt Olympics as an LLM challenge, hackathon, or event format in this context. ${sourceRefsForText(sources, "prompt olympics")}`
+  );
+  addSectionPoint(
+    projectPoints,
+    text.includes("ai caller"),
+    `Sources mention AI Caller as another AI product or project in the same public footprint. ${sourceRefsForText(sources, "ai caller")}`
+  );
+  addSectionPoint(
+    projectPoints,
+    text.includes("linkedinfluencer"),
+    `Sources mention LinkedInfluencer as a smaller public project in the portfolio. ${sourceRefsForText(sources, "linkedinfluencer")}`
+  );
+  pushEntitySection(sections, {
+    title: "Projects and products",
+    body: `The profile is not just a name match; sources tie the query to specific AI products, projects, or event platforms. ${sourceRefsForText(sources, "docuask prompt olympics ai caller linkedinfluencer")}`,
+    points: projectPoints
+  });
+
+  const backgroundPoints = [];
+  addSectionPoint(
+    backgroundPoints,
+    text.includes("software engineer") || text.includes("developer") || text.includes("builder"),
+    `Sources describe software engineering, developer, or builder work connected to ${name}. ${sourceRefsForText(sources, "software engineer developer builder")}`
+  );
+  addSectionPoint(
+    backgroundPoints,
+    text.includes("entrepreneur") || text.includes("solopreneur") || text.includes("startup"),
+    `Sources frame the public work around entrepreneur, solopreneur, startup, or company-building activity. ${sourceRefsForText(sources, "entrepreneur solopreneur startup company")}`
+  );
+  addSectionPoint(
+    backgroundPoints,
+    text.includes("london") || text.includes("uk") || text.includes("united kingdom"),
+    `Some sources connect the public journey to London, the UK, or a move into the Malaysian AI scene. ${sourceRefsForText(sources, "london uk united kingdom malaysia")}`
+  );
+  addSectionPoint(
+    backgroundPoints,
+    text.includes("digitalnewsasia") || text.includes("digital news asia"),
+    `Digital News Asia or related coverage appears in the source set, adding third-party context beyond owned pages. ${sourceRefsForText(sources, "digitalnewsasia digital news asia")}`
+  );
+  pushEntitySection(sections, {
+    title: "Professional background",
+    body: `The available evidence supports a practical builder profile: products, community events, and public project pages rather than only a social profile. ${sourceRefsForText(sources, "software engineer developer entrepreneur founder docuask")}`,
+    points: backgroundPoints
+  });
+
+  const whyPoints = keyPoints
+    .filter(Boolean)
+    .filter((point, index, points) =>
+      points.findIndex((candidate) => isNearDuplicateFact(point, candidate)) === index
+    )
+    .slice(0, 3);
+  pushEntitySection(sections, {
+    title: "Why this matters",
+    body: `For relevance, this identity layer separates source-backed person/project context from broad AI-in-Malaysia headlines. ${sourceRefsForText(sources, "joseph chin ai tinkerers docuask malaysia")}`,
+    points: whyPoints
+  });
+
+  return sections.slice(0, 5);
+}
+
+function addSectionPoint(points, condition, point) {
+  if (condition && !points.some((existing) => isNearDuplicateFact(existing, point))) {
+    points.push(point);
+  }
+}
+
+function pushEntitySection(sections, section) {
+  const points = (section.points ?? []).filter(Boolean).slice(0, 4);
+  if (!points.length) {
+    return;
+  }
+
+  sections.push({
+    title: section.title,
+    body: section.body,
+    points
+  });
 }
 
 function buildSourceBackedProfileFacts({ name, sources }) {

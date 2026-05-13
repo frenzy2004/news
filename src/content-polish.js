@@ -3,12 +3,28 @@ const OPENAI_POLISH_LIMIT = 8;
 const ENTITY_PROFILE_SCHEMA = {
   type: "object",
   additionalProperties: false,
-  required: ["summary", "key_points"],
+  required: ["summary", "key_points", "sections"],
   properties: {
     summary: { type: "string" },
     key_points: {
       type: "array",
       items: { type: "string" }
+    },
+    sections: {
+      type: "array",
+      items: {
+        type: "object",
+        additionalProperties: false,
+        required: ["title", "body", "points"],
+        properties: {
+          title: { type: "string" },
+          body: { type: "string" },
+          points: {
+            type: "array",
+            items: { type: "string" }
+          }
+        }
+      }
     }
   }
 };
@@ -65,11 +81,13 @@ export async function synthesizeEntityProfile({
         store: false,
         max_output_tokens: 1800,
         instructions: [
-          "Build a concise source-backed entity profile for a business/news relevance app.",
+          "Build a rich source-backed entity profile for a business/news relevance app.",
           "Use only the provided source titles, snippets, and URLs. Do not add facts, dates, roles, projects, or biographical claims that are not present in the sources.",
           "Prefer concrete identity facts: role, community, company/project names, location, products, events, and distinctions from similarly named people.",
-          "Cite source IDs inline after factual claims, for example [E1]. Every summary and key point should include at least one source ID.",
-          "Write one polished summary sentence and 3 to 6 crisp key points.",
+          "Cite source IDs inline after factual claims, for example [E1]. Every summary, key point, section body, and section point should include at least one source ID.",
+          "Write one polished summary sentence, 3 to 6 crisp key points, and 3 to 5 titled sections.",
+          "Good section titles include Role in the community, Professional background, Projects and products, Public journey, and Why it matters.",
+          "Each section body should be 1 to 2 sentences. Each section should include 2 to 4 specific points when the sources support them.",
           "Do not mention APIs, scraping, search providers, models, prompts, or internal implementation."
         ].join("\n"),
         input: [
@@ -127,11 +145,32 @@ export async function synthesizeEntityProfile({
         .filter((point, index, points) =>
           points.findIndex((candidate) => isDuplicatePoint(point, candidate)) === index
         )
-        .slice(0, 6)
+        .slice(0, 6),
+      sections: cleanEntitySections(parsed.sections, usableSources)
     };
   } catch {
     return null;
   }
+}
+
+function cleanEntitySections(sections, sources) {
+  if (!Array.isArray(sections)) {
+    return [];
+  }
+
+  return sections
+    .map((section) => ({
+      title: cleanPolishedText(section?.title),
+      body: ensureEntityCitation(cleanPolishedText(section?.body), sources),
+      points: Array.isArray(section?.points)
+        ? section.points
+            .map((point) => ensureEntityCitation(cleanPolishedText(point), sources))
+            .filter(Boolean)
+            .slice(0, 4)
+        : []
+    }))
+    .filter((section) => section.title && (section.body || section.points.length))
+    .slice(0, 5);
 }
 
 function ensureEntityCitation(text, sources) {

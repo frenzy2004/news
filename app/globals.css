@@ -922,6 +922,13 @@ select:focus {
   gap: 10px;
 }
 
+.entity-story-points > span {
+  color: var(--muted);
+  font-size: 0.74rem;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
 .entity-story-points p {
   position: relative;
   padding-left: 18px;
@@ -938,6 +945,39 @@ select:focus {
   content: "";
   background: var(--green);
   border-radius: 999px;
+}
+
+.entity-story-sections {
+  display: grid;
+  gap: 0;
+  border-top: 1px solid var(--line);
+}
+
+.entity-story-section {
+  display: grid;
+  gap: 9px;
+  padding: 16px 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.entity-story-section h4 {
+  color: #24312b;
+  font-size: 1rem;
+  font-weight: 900;
+  line-height: 1.25;
+}
+
+.entity-story-section p,
+.entity-story-section li {
+  color: #3d4742;
+  line-height: 1.62;
+}
+
+.entity-story-section ul {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding-left: 19px;
 }
 
 .entity-story-sources {

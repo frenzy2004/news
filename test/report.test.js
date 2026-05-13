@@ -1132,6 +1132,14 @@ test("entity queries do not treat generic Malaysia AI infrastructure as adjacent
     /\[E\d+\]/
   );
   assert.equal(adjacent.items[0].articles[0].source_id, "E1");
+  assert.equal(adjacent.items.length, 1);
+  assert.ok(adjacent.items[0].entity_story.sections.length > 0);
+  assert.match(
+    adjacent.items[0].entity_story.sections
+      .flatMap((section) => [section.body, ...section.points])
+      .join(" "),
+    /\[E\d+\]/
+  );
   assert.ok(adjacent.items.every((item) => item.title !== "ByteDance AI Expansion"));
   assert.ok(
     adjacent.items[0].key_points.join(" ").includes("AI Tinkerers") ||
@@ -1194,11 +1202,12 @@ test("adjacent signals reject weak substring and generic global matches", async 
     fetchImpl
   });
 
-  assert.equal(adjacent.items.length, 2);
+  assert.equal(adjacent.items.length, 1);
   assert.equal(adjacent.items[0].match_type, "background");
   assert.match(adjacent.items[0].title, /source-backed profile/);
-  assert.equal(adjacent.items[1].title, "About Me - Khailee Ng");
-  assert.notEqual(adjacent.items[1].title, "China Blocks Meta");
+  assert.equal(adjacent.items[0].articles[0].title, "About Me - Khailee Ng");
+  assert.ok(adjacent.items[0].entity_story.sections.length > 0);
+  assert.ok(adjacent.items.every((item) => item.title !== "China Blocks Meta"));
 });
 
 test("adjacent signals reject first-name-only person matches", async () => {
@@ -1256,10 +1265,11 @@ test("adjacent signals reject first-name-only person matches", async () => {
     fetchImpl
   });
 
-  assert.equal(adjacent.items.length, 2);
+  assert.equal(adjacent.items.length, 1);
   assert.equal(adjacent.items[0].match_type, "background");
   assert.match(adjacent.items[0].title, /source-backed profile/);
-  assert.equal(adjacent.items[1].title, "Joseph Chin - DocuAsk");
+  assert.equal(adjacent.items[0].articles[0].title, "Joseph Chin - DocuAsk");
+  assert.ok(adjacent.items[0].entity_story.sections.length > 0);
 });
 
 test("background sources expand AIT and rank identity context before event pages", async () => {
@@ -1329,11 +1339,12 @@ test("background sources expand AIT and rank identity context before event pages
     fetchImpl
   });
 
-  assert.equal(adjacent.items.length, 7);
+  assert.equal(adjacent.items.length, 1);
   assert.match(adjacent.items[0].title, /source-backed profile/);
   assert.match(adjacent.items[0].key_points.join(" "), /AI Tinkerers/);
-  assert.match(adjacent.items[1].title, /AI community/);
-  assert.doesNotMatch(adjacent.items[1].title, /Eventsize/);
+  assert.match(adjacent.items[0].articles[0].title, /AI community/);
+  assert.doesNotMatch(adjacent.items[0].articles[0].title, /Eventsize/);
+  assert.ok(adjacent.items[0].entity_story.sections.length > 0);
   assert.ok(adjacent.contextResolution.resolved_entity.keywords.includes("ai tinkerers"));
   assert.ok(!adjacent.items[0].business_specificity.terms.includes("ait"));
   assert.doesNotMatch(adjacent.items[0].why_relevant, /next scan/i);

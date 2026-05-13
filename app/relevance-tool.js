@@ -1008,7 +1008,14 @@ function StoryDetail({
       </div>
 
       <div className="signal-strip">
-        {isBackground ? (
+        {isEntityProfile ? (
+          <>
+            <Signal label="Profile" value="Source-backed" />
+            <Signal label="Sources" value={item.article_count || 0} />
+            <Signal label="Citations" value="Yes" />
+            <Signal label="Mode" value="Entity" />
+          </>
+        ) : isBackground ? (
           <>
             <Signal label="Source" value="Exa" />
             <Signal label="Links" value={item.article_count || 0} />
@@ -1031,7 +1038,7 @@ function StoryDetail({
         <ChevronRight size={17} aria-hidden="true" />
       </button>
 
-      {item.adjacent_context ? (
+      {item.adjacent_context && !isEntityProfile ? (
         <section className="adjacent-note">
           <span>{item.adjacent_context.directness || "adjacent"}</span>
           <p>{item.adjacent_context.directness_reason}</p>
@@ -1072,9 +1079,9 @@ function StoryDetail({
         </section>
       ) : null}
 
-      {isBackground ? (
+      {isBackground && !isEntityProfile ? (
         <BackgroundContextBrief item={item} />
-      ) : specialization ? (
+      ) : !isEntityProfile && specialization ? (
         <section className="specialization-brief">
           <BriefValue
             label="Market"
@@ -1133,7 +1140,7 @@ function StoryDetail({
         </>
       ) : null}
 
-      {item.entities?.length ? (
+      {!isEntityProfile && item.entities?.length ? (
         <section className="detail-section">
           <h3>
             <Tag size={17} aria-hidden="true" />
@@ -1188,6 +1195,7 @@ function StoryDetail({
 function EntityProfileStory({ item }) {
   const citationById = buildArticleCitationMap(item.articles);
   const sources = item.articles ?? [];
+  const sections = item.entity_story?.sections ?? [];
 
   return (
     <section className="entity-profile-story">
@@ -1201,10 +1209,35 @@ function EntityProfileStory({ item }) {
 
       {item.key_points?.length ? (
         <div className="entity-story-points">
+          <span>Highlights</span>
           {item.key_points.slice(0, 6).map((point) => (
             <p key={point}>
               <CitationText citationById={citationById} text={point} />
             </p>
+          ))}
+        </div>
+      ) : null}
+
+      {sections.length ? (
+        <div className="entity-story-sections">
+          {sections.slice(0, 5).map((section, index) => (
+            <article className="entity-story-section" key={`${section.title}-${index}`}>
+              <h4>{section.title}</h4>
+              {section.body ? (
+                <p>
+                  <CitationText citationById={citationById} text={section.body} />
+                </p>
+              ) : null}
+              {section.points?.length ? (
+                <ul>
+                  {section.points.slice(0, 4).map((point) => (
+                    <li key={point}>
+                      <CitationText citationById={citationById} text={point} />
+                    </li>
+                  ))}
+                </ul>
+              ) : null}
+            </article>
           ))}
         </div>
       ) : null}
