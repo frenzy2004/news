@@ -1127,6 +1127,11 @@ test("entity queries do not treat generic Malaysia AI infrastructure as adjacent
   });
 
   assert.equal(adjacent.items[0].match.source, "entity_profile");
+  assert.match(
+    [adjacent.items[0].summary, ...adjacent.items[0].key_points].join(" "),
+    /\[E\d+\]/
+  );
+  assert.equal(adjacent.items[0].articles[0].source_id, "E1");
   assert.ok(adjacent.items.every((item) => item.title !== "ByteDance AI Expansion"));
   assert.ok(
     adjacent.items[0].key_points.join(" ").includes("AI Tinkerers") ||

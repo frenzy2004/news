@@ -158,7 +158,7 @@ export async function polishBackgroundItems({
   }
 
   const deterministicItems = items.map((item) =>
-    item.match_type === "background" ? applyDeterministicPolish(item) : item
+    shouldPolishBackgroundItem(item) ? applyDeterministicPolish(item) : item
   );
 
   if (!openAiApiKey || !openAiApiKey.trim()) {
@@ -169,6 +169,7 @@ export async function polishBackgroundItems({
     const polish = await requestOpenAiPolish({
       items: deterministicItems
         .filter((item) => item.match_type === "background")
+        .filter(shouldPolishBackgroundItem)
         .slice(0, OPENAI_POLISH_LIMIT),
       apiKey: openAiApiKey.trim(),
       model,
@@ -183,7 +184,7 @@ export async function polishBackgroundItems({
     return deterministicItems.map((item) => {
       const polished = polishByRank.get(Number(item.rank));
 
-      if (!polished || item.match_type !== "background") {
+      if (!polished || !shouldPolishBackgroundItem(item)) {
         return item;
       }
 
@@ -219,6 +220,10 @@ export async function polishBackgroundItems({
   } catch {
     return deterministicItems;
   }
+}
+
+function shouldPolishBackgroundItem(item) {
+  return item?.match_type === "background" && item?.match?.source !== "entity_profile";
 }
 
 function applyDeterministicPolish(item) {
