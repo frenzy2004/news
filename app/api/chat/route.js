@@ -761,19 +761,67 @@ function parseJsonObject(text) {
   }
 
   try {
-    return JSON.parse(text);
+    return normalizeParsedJson(JSON.parse(text));
   } catch {
-    const match = text.match(/\{[\s\S]*\}/);
-    if (!match) {
-      return null;
-    }
+    return parseFirstBalancedJsonObject(text);
+  }
+}
 
-    try {
-      return JSON.parse(match[0]);
-    } catch {
-      return null;
+function parseFirstBalancedJsonObject(text) {
+  const value = String(text || "");
+
+  for (let start = value.indexOf("{"); start >= 0; start = value.indexOf("{", start + 1)) {
+    let depth = 0;
+    let inString = false;
+    let escaped = false;
+
+    for (let index = start; index < value.length; index += 1) {
+      const char = value[index];
+
+      if (escaped) {
+        escaped = false;
+        continue;
+      }
+
+      if (char === "\\") {
+        escaped = inString;
+        continue;
+      }
+
+      if (char === '"') {
+        inString = !inString;
+        continue;
+      }
+
+      if (inString) {
+        continue;
+      }
+
+      if (char === "{") {
+        depth += 1;
+      } else if (char === "}") {
+        depth -= 1;
+      }
+
+      if (depth === 0) {
+        try {
+          return normalizeParsedJson(JSON.parse(value.slice(start, index + 1)));
+        } catch {
+          break;
+        }
+      }
     }
   }
+
+  return null;
+}
+
+function normalizeParsedJson(parsed) {
+  if (Array.isArray(parsed)) {
+    return parsed.find((item) => item && typeof item === "object" && item.answer) ?? null;
+  }
+
+  return parsed && typeof parsed === "object" ? parsed : null;
 }
 
 function cleanString(value) {

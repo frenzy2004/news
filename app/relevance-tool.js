@@ -613,8 +613,56 @@ function normalizeChatAnswerText(text) {
     const parsed = JSON.parse(value);
     return typeof parsed.answer === "string" ? parsed.answer : value;
   } catch {
-    return value;
+    const parsed = parseFirstJsonObject(value);
+    return typeof parsed?.answer === "string" ? parsed.answer : value;
   }
+}
+
+function parseFirstJsonObject(value) {
+  for (let start = value.indexOf("{"); start >= 0; start = value.indexOf("{", start + 1)) {
+    let depth = 0;
+    let inString = false;
+    let escaped = false;
+
+    for (let index = start; index < value.length; index += 1) {
+      const char = value[index];
+
+      if (escaped) {
+        escaped = false;
+        continue;
+      }
+
+      if (char === "\\") {
+        escaped = inString;
+        continue;
+      }
+
+      if (char === '"') {
+        inString = !inString;
+        continue;
+      }
+
+      if (inString) {
+        continue;
+      }
+
+      if (char === "{") {
+        depth += 1;
+      } else if (char === "}") {
+        depth -= 1;
+      }
+
+      if (depth === 0) {
+        try {
+          return JSON.parse(value.slice(start, index + 1));
+        } catch {
+          break;
+        }
+      }
+    }
+  }
+
+  return null;
 }
 
 function renderLinkedCitations(text, citationById) {
