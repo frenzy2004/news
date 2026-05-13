@@ -203,21 +203,36 @@ async function discoverCreatorStoriesWithFallback({ client, profile, dateRange }
       throw error;
     }
 
-    const fallbackPayload = await client.discoverCreatorStories({
-      creatorBackground: profile.creatorBackground,
-      dateRange: "Now"
-    });
+    const fallbackRanges = dateRange === "All" ? ["Week", "Now"] : ["Now"];
+    const fallbackErrors = [];
 
-    return {
-      payload: fallbackPayload,
-      dateRange: "Now",
-      errors: [
-        {
-          ...formatError({ error, profile, endpoint: "/api/creator" }),
-          message: `${error.message} Retried /api/creator with DateRange "Now".`
-        }
-      ]
-    };
+    for (const fallbackRange of fallbackRanges) {
+      try {
+        const fallbackPayload = await client.discoverCreatorStories({
+          creatorBackground: profile.creatorBackground,
+          dateRange: fallbackRange
+        });
+
+        return {
+          payload: fallbackPayload,
+          dateRange: fallbackRange,
+          errors: [
+            {
+              ...formatError({ error, profile, endpoint: "/api/creator" }),
+              message: `${error.message} Retried /api/creator with DateRange "${fallbackRange}".`
+            },
+            ...fallbackErrors
+          ]
+        };
+      } catch (fallbackError) {
+        fallbackErrors.push({
+          ...formatError({ error: fallbackError, profile, endpoint: "/api/creator" }),
+          message: `${fallbackError.message} Retried /api/creator with DateRange "${fallbackRange}".`
+        });
+      }
+    }
+
+    throw error;
   }
 }
 

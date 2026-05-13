@@ -240,6 +240,84 @@ test("generateReport fetches creator stories and enriches with detailed stories 
   assert.equal(report.businesses[0].items[0].articles[0].url, "https://example.com/hiring");
 });
 
+test("all-time reports fall back to week creator discovery when needed", async () => {
+  const seenRanges = [];
+  const fetchImpl = createMockFetch({
+    "/api/creator": ({ body }) => {
+      seenRanges.push(body.DateRange);
+      if (body.DateRange === "All") {
+        return {
+          status: 400,
+          body: {
+            error: "Unsupported range."
+          }
+        };
+      }
+
+      return {
+        DiscoveredStories: [
+          {
+            StoryId: 303,
+            Title: "Builder Community",
+            Body: "AI builders are meeting in Malaysia.",
+            Reason: "This affects local AI community operators."
+          }
+        ]
+      };
+    },
+    "/api/trends/detailed": () => ({
+      Stories: [
+        {
+          StoryId: 303,
+          Title: "Builder Community",
+          Body: "AI builders are meeting in Malaysia.",
+          Theme: "AI community",
+          CategoryKeys: ["Technology"],
+          ViralityScore: 3,
+          KeyPoints: ["AI builders are meeting."],
+          ArticleCount: 1,
+          Articles: [
+            {
+              Title: "Community source",
+              Body: "Source summary.",
+              Url: "https://example.com/community",
+              Timestamp: "2026-05-06T00:00:00Z"
+            }
+          ]
+        }
+      ]
+    }),
+    "/api/trends/search": () => ({
+      LiveStories: [],
+      HistoricalStories: []
+    })
+  });
+
+  const report = await generateReport({
+    apiKey: "test-key",
+    dateRange: "All",
+    profiles: [
+      {
+        id: "ait",
+        company: "AI Tinkerers KL",
+        website: "",
+        creatorBackground: "AI Tinkerers KL builder community",
+        specialization: {
+          inferred_domain: "general-business",
+          search_terms: ["AI Tinkerers"]
+        }
+      }
+    ],
+    fetchImpl
+  });
+
+  assert.deepEqual(seenRanges, ["All", "Week"]);
+  assert.equal(report.date_range, "All");
+  assert.equal(report.businesses[0].creator_date_range, "Week");
+  assert.match(report.errors[0].message, /DateRange "Week"/);
+  assert.equal(report.businesses[0].items[0].story_id, 303);
+});
+
 test("missing BTW_API_KEY exits cleanly without writing a report", async () => {
   const tempDir = await mkdtemp(path.join(os.tmpdir(), "btw-missing-key-"));
   const outputPath = path.join(tempDir, "report.json");

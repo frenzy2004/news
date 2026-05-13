@@ -30,7 +30,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 
 const STRICT_SPECIFICITY_SCORE = 100;
 const MAX_ARTICLES = 50;
-const MAX_DATE_RANGE = "Week";
+const MAX_DATE_RANGE = "All";
 
 const CAREERSHERPA_CONTEXT = `Company: CareerSherpa.net
 Website: http://www.careersherpa.net

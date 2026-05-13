@@ -153,7 +153,7 @@ async function attachFreshCareSignals(evidencePack) {
       exaApiKey: process.env.EXA_API_KEY,
       profile: buildCareScanProfile(evidencePack),
       query: scanQuery,
-      dateRange: evidencePack.date_range === "Week" ? "Week" : "Now",
+      dateRange: normalizeDateRange(evidencePack.date_range),
       maxArticles: 12,
       openAiApiKey: "",
       openAiModel: process.env.OPENAI_MODEL || DEFAULT_MODEL
@@ -489,6 +489,19 @@ function normalizeForCare(value) {
     .replace(/[^a-z0-9]+/g, " ")
     .replace(/\s+/g, " ")
     .trim();
+}
+
+function normalizeDateRange(value) {
+  const dateRange = cleanString(value).toLowerCase();
+  if (dateRange === "all" || dateRange === "all time" || dateRange === "all-time") {
+    return "All";
+  }
+
+  if (dateRange === "week") {
+    return "Week";
+  }
+
+  return "Now";
 }
 
 async function createGroundedResponse({ apiKey, model, messages, evidencePack }) {

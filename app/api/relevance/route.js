@@ -44,6 +44,7 @@ export async function POST(request) {
   const maxArticles = clampInteger(body.maxArticles, 1, 50, 50);
   const minSpecificityScore = clampInteger(body.minSpecificityScore, 0, 100, 14);
   const allowThresholdFallback = body.strictThreshold !== true;
+  const dateRange = normalizeDateRange(body.dateRange);
   const parsedContext = parseBusinessContext(context);
   const isSparseEntityQuery = isLikelySparseEntityQuery(context);
   const explicitCompany = cleanText(body.company);
@@ -70,7 +71,7 @@ export async function POST(request) {
     const report = await generateReport({
       apiKey: process.env.BTW_API_KEY,
       profiles: [profile],
-      dateRange: body.dateRange === "Week" ? "Week" : "Now",
+      dateRange,
       maxArticles,
       minSpecificityScore,
       allowThresholdFallback
@@ -101,7 +102,7 @@ export async function POST(request) {
         exaApiKey: process.env.EXA_API_KEY,
         profile,
         query: context,
-        dateRange: body.dateRange === "Week" ? "Week" : "Now",
+        dateRange,
         maxArticles,
         openAiApiKey: process.env.OPENAI_API_KEY,
         openAiModel: process.env.OPENAI_MODEL || "gpt-5"
@@ -224,6 +225,19 @@ function clampInteger(value, min, max, fallback) {
     return fallback;
   }
   return Math.min(max, Math.max(min, parsed));
+}
+
+function normalizeDateRange(value) {
+  const dateRange = cleanText(value).toLowerCase();
+  if (dateRange === "all" || dateRange === "all time" || dateRange === "all-time") {
+    return "All";
+  }
+
+  if (dateRange === "week") {
+    return "Week";
+  }
+
+  return "Now";
 }
 
 function slugify(value) {
